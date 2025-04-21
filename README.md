@@ -28,7 +28,7 @@ cd tg-moderation-analyzer
 pip install -r requirements.txt
 ```
 
-3. Настройте конфигурацию в config.py:
+3. Настройте конфигурацию в начале файла в переменную config:
 ```bash
 {
     "api_id": 12345,          # Ваш API ID
