@@ -1,8 +1,8 @@
 # 🔍 Telegram Moderation Analyzer
 
 [![Python](https://img.shields.io/badge/Python-3.8+-blue?logo=python)](https://www.python.org/downloads/)
-![Telethon](https://img.shields.io/badge/Telethon-1.25+-green?logo=telegram)
-![License](https://img.shields.io/badge/License-MIT-yellow)
+[![Telethon](https://img.shields.io/badge/Telethon-1.25+-green?logo=telegram)](https://github.com/LonamiWebs/Telethon)
+[![License](https://img.shields.io/badge/License-MIT-yellow)](https://opensource.org/licenses/MIT)
 
 Анализатор модерации Telegram-чата с генерацией статистических отчетов. Отслеживает муты, варны и баны, выявляет самых активных нарушителей и модераторов.
 
