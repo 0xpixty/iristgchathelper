@@ -1,6 +1,6 @@
 # 🔍 Telegram Moderation Analyzer
 
-[![Python](https://img.shields.io/badge/Python-3.8+-blue?logo=python)](https://www.python.org/downloads/)
+[![Python]([https://img.shields.io/badge/Python-3.8+-blue?logo=python](https://img.shields.io/badge/Python-3.12%2B-blue%3Flogo%3Dpython))](https://www.python.org/downloads/)
 [![Telethon](https://img.shields.io/badge/Telethon-1.25+-green?logo=telegram)](https://github.com/LonamiWebs/Telethon)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](https://opensource.org/licenses/MIT)
 
