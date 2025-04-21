@@ -75,3 +75,5 @@ python moder_analyzer.py
 ```
 
 | Создано с ❤️ для модераторов Telegram | [zxpixty] | 2025
+## License
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
