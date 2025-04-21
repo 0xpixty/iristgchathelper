@@ -417,9 +417,9 @@ class ModerationAnalyzer:
                 for mute in self.mutes:
                     mod_activity[mute['moderator']]['mutes'] += 1
                 for warn in self.warns:
-                    mod_activity[mute['moderator']]['warns'] += 1
+                    mod_activity[warn['moderator']]['warns'] += 1
                 for ban in self.bans:
-                    mod_activity[mute['moderator']]['bans'] += 1
+                    mod_activity[ban['moderator']]['bans'] += 1
 
                 sorted_mods = sorted(
                     mod_activity.items(),
