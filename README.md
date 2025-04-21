@@ -44,7 +44,7 @@ pip install -r requirements.txt
 
 🚀 Использование
 ```bash
-python tg_moderator_parser.py
+python moder_analyzer.py
 ```
 
 После запуска будет сгенерирован отчет в файле reports/latest_report.txt
