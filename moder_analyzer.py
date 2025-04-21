@@ -14,28 +14,31 @@ config = {
     "mod_chat_id": -,
     "main_chat_id": -,
     "bot_id": 707693258,
-    "history_file": "moderation_history.json",
-    "report_file": "moderation_report.txt"
+    "history_file": "history.json",
+    "report_file": "report.txt"
 }
 
 client = TelegramClient("moderation_analyzer", config["api_id"], config["api_hash"])
 
 patterns = {
     "mute": re.compile(
-        r"(?P<target>[^\n()]+?)\s*\(@?(?P<target_username>[^\s)]+)?\)\s*"
+        r"(?P<target>[^\n()]+?)?\s*"
+        r"(?:\((?:@?(?P<target_username>[^\s)]+)|tg://user\?id=(?P<user_id>\d+)|https://t\.me/(?P<telegram_username>[^\s)]+)|(?P<other>[^\s)]*))\))?\s*"
         r"лишается права слова\s*на\s*(?P<duration>\d+\s*(?:день|дня|дней|час|часа|часов|минут[ы]?))\s*"
         r"(?:💬\s*Причина:\s*(?P<reason>[^\n]+))?",
         re.IGNORECASE
     ),
     "warn": re.compile(
-        r"(?P<target>[^\n()]+?)\s*\(@?(?P<target_username>[^\s)]+)?\)\s*"
+        r"(?P<target>[^\n()]+?)?\s*"
+        r"(?:\((?:@?(?P<target_username>[^\s)]+)|tg://user\?id=(?P<user_id>\d+)|https://t\.me/(?P<telegram_username>[^\s)]+)|(?P<other>[^\s)]*))\))?\s*"
         r"получает предупреждение(?:\s*\(\d/3\))?\s*⏱\s*"
         r"Будет снято через\s*(?P<duration>[\d\sа-яa-z]+)\s*"
         r"(?:💬\s*Причина:\s*(?P<reason>[^\n]+))?",
         re.IGNORECASE
     ),
     "ban": re.compile(
-        r"(?P<target>[^\n()]+?)\s*\(@?(?P<target_username>[^\s)]+)?\)\s*"
+        r"(?P<target>[^\n()]+?)?\s*"
+        r"(?:\((?:@?(?P<target_username>[^\s)]+)|tg://user\?id=(?P<user_id>\d+)|https://t\.me/(?P<telegram_username>[^\s)]+)|(?P<other>[^\s)]*))\))?\s*"
         r"получает бан\s*(?P<duration>навсегда|\d+[smhdw]?)\s*"
         r"(?:💬\s*Причина:\s*(?P<reason>[^\n]+))?",
         re.IGNORECASE
@@ -111,18 +114,28 @@ class ModerationAnalyzer:
         action_type = None
         
         try:
-            # Проверка на мут
             if "лишается права слова" in text.lower():
                 match = patterns["mute"].search(text)
-                if match and match.group("target").strip() not in ["", "⁬"]:
+                if match:
                     mod_match = patterns["moderator"].search(text)
                     moderator = mod_match.group("name").strip() if mod_match else "Неизвестный"
+                    
+                    target = match.group("target").strip() if match.group("target") else ""
+                    target_username = match.group("target_username") if match.group("target_username") else None
+                    user_id = match.group("user_id") if match.group("user_id") else None
+                    telegram_username = match.group("telegram_username") if match.group("telegram_username") else None
+                    other = match.group("other") if match.group("other") else None
+                    
+                    if not any([target, target_username, user_id, telegram_username]) and other in ["", None]:
+                        print(f"Пропущено (пустой target): ID {message.id}, текст: {text}")
+                        return False
                     
                     action = {
                         "timestamp": message.date,
                         "moderator": moderator,
-                        "target": match.group("target").strip(),
-                        "target_username": match.group("target_username"),
+                        "target": target,
+                        "target_username": target_username or telegram_username,
+                        "user_id": user_id,
                         "reason": match.group("reason") or "Не указана",
                         "duration": match.group("duration"),
                         "id": message.id
@@ -130,18 +143,28 @@ class ModerationAnalyzer:
                     self.mutes.append(action)
                     action_type = "mute"
 
-            # Проверка на варн
             elif "получает предупреждение" in text.lower():
                 match = patterns["warn"].search(text)
-                if match and match.group("target").strip() not in ["", "⁬"]:
+                if match:
                     mod_match = patterns["moderator"].search(text)
                     moderator = mod_match.group("name").strip() if mod_match else "Неизвестный"
+                    
+                    target = match.group("target").strip() if match.group("target") else ""
+                    target_username = match.group("target_username") if match.group("target_username") else None
+                    user_id = match.group("user_id") if match.group("user_id") else None
+                    telegram_username = match.group("telegram_username") if match.group("telegram_username") else None
+                    other = match.group("other") if match.group("other") else None
+                    
+                    if not any([target, target_username, user_id, telegram_username]) and other in ["", None]:
+                        print(f"Пропущено (пустой target): ID {message.id}, текст: {text}")
+                        return False
                     
                     action = {
                         "timestamp": message.date,
                         "moderator": moderator,
-                        "target": match.group("target").strip(),
-                        "target_username": match.group("target_username"),
+                        "target": target,
+                        "target_username": target_username or telegram_username,
+                        "user_id": user_id,
                         "reason": match.group("reason") or "Не указана",
                         "duration": match.group("duration"),
                         "id": message.id
@@ -149,18 +172,28 @@ class ModerationAnalyzer:
                     self.warns.append(action)
                     action_type = "warn"
 
-            # Проверка на бан
             elif "получает бан" in text.lower():
                 match = patterns["ban"].search(text)
-                if match and match.group("target").strip() not in ["", "⁬"]:
+                if match:
                     mod_match = patterns["moderator"].search(text)
                     moderator = mod_match.group("name").strip() if mod_match else "Неизвестный"
+                    
+                    target = match.group("target").strip() if match.group("target") else ""
+                    target_username = match.group("target_username") if match.group("target_username") else None
+                    user_id = match.group("user_id") if match.group("user_id") else None
+                    telegram_username = match.group("telegram_username") if match.group("telegram_username") else None
+                    other = match.group("other") if match.group("other") else None
+                    
+                    if not any([target, target_username, user_id, telegram_username]) and other in ["", None]:
+                        print(f"Пропущено (пустой target): ID {message.id}, текст: {text}")
+                        return False
                     
                     action = {
                         "timestamp": message.date,
                         "moderator": moderator,
-                        "target": match.group("target").strip(),
-                        "target_username": match.group("target_username"),
+                        "target": target,
+                        "target_username": target_username or telegram_username,
+                        "user_id": user_id,
                         "reason": match.group("reason") or "Не указана",
                         "duration": match.group("duration"),
                         "id": message.id
@@ -169,14 +202,19 @@ class ModerationAnalyzer:
                     action_type = "ban"
             
             if action:
-                target_key = action["target_username"] or action["target"]
+                # Формируем ключ: user_id > target_username > target
+                target_key = action["user_id"] or action["target_username"] or action["target"] or f"unknown_{action['id']}"
+                if not target_key or target_key.strip() in ["", "⁬"]:
+                    print(f"Пропущено (некорректный target_key): ID {message.id}, текст: {text}")
+                    return False
+                
                 self.target_stats[target_key][action_type + "s"] += 1
                 self.target_stats[target_key]["moderators"].add(action["moderator"])
-                print(f"Найдено действие: {action_type} от {action['moderator']} для {action['target']}")
+                print(f"Найдено действие: {action_type} от {action['moderator']} для {target_key}")
                 return True
                 
         except Exception as e:
-            print(f"Ошибка анализа сообщения {message.id}: {str(e)[:100]}...")
+            print(f"Ошибка анализа сообщения {message.id}: {str(e)[:100]}..., текст: {text}")
             
         return False
 
@@ -197,7 +235,7 @@ class ModerationAnalyzer:
                 try:
                     await self.analyze_message(message)
                 except Exception as e:
-                    print(f"Ошибка в сообщении {message.id}: {str(e)[:100]}...")
+                    print(f"Ошибка в сообщении {message.id}: {str(e)[:100]}..., текст: {message.text}")
                     continue
                     
             if self.mutes or self.warns or self.bans:
@@ -289,7 +327,7 @@ class ModerationAnalyzer:
                 f.write("------ Муты ------\n")
                 for mute in self.mutes[-10:]:
                     ts = mute["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
-                    target = f"@{mute['target_username']}" if mute['target_username'] else mute['target']
+                    target = f"@{mute['target_username']}" if mute['target_username'] else f"tg://user?id={mute['user_id']}" if mute['user_id'] else mute['target'] or f"unknown_{mute['id']}"
                     f.write(f"[{ts}] {mute['moderator']} → {target} ({mute['duration']})")
                     if mute['reason'] != "Не указана":
                         f.write(f" | Причина: {mute['reason']}")
@@ -303,7 +341,7 @@ class ModerationAnalyzer:
                 f.write("\n------ Варны ------\n")
                 for warn in self.warns[-10:]:
                     ts = warn["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
-                    target = f"@{warn['target_username']}" if warn['target_username'] else warn['target']
+                    target = f"@{warn['target_username']}" if warn['target_username'] else f"tg://user?id={warn['user_id']}" if warn['user_id'] else warn['target'] or f"unknown_{warn['id']}"
                     f.write(f"[{ts}] {warn['moderator']} → {target} ({warn['duration']})")
                     if warn['reason'] != "Не указана":
                         f.write(f" | Причина: {warn['reason']}")
@@ -317,7 +355,7 @@ class ModerationAnalyzer:
                 f.write("\n------ Баны ------\n")
                 for ban in self.bans[-10:]:
                     ts = ban["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
-                    target = f"@{ban['target_username']}" if ban['target_username'] else ban['target']
+                    target = f"@{ban['target_username']}" if ban['target_username'] else f"tg://user?id={ban['user_id']}" if ban['user_id'] else ban['target'] or f"unknown_{ban['id']}"
                     f.write(f"[{ts}] {ban['moderator']} → {target} ({ban['duration']})")
                     if ban['reason'] != "Не указана":
                         f.write(f" | Причина: {ban['reason']}")
@@ -327,26 +365,32 @@ class ModerationAnalyzer:
                 for mod, count in ban_total.most_common():
                     f.write(f"- {mod}: {count}\n")
                 
-                # Топ-5 нарушителей (обычные пользователи)
+                # Топ-5 нарушителей среди пользователей
                 f.write("\n------ Топ-5 нарушителей ------\n")
 
                 violators = defaultdict(lambda: {'mutes': 0, 'warns': 0, 'bans': 0})
                 for mute in self.mutes:
-                    violators[mute['target']]['mutes'] += 1
+                    target_key = mute['user_id'] or mute['target_username'] or mute['target'] or f"unknown_{mute['id']}"
+                    violators[target_key]['mutes'] += 1
                 for warn in self.warns:
-                    violators[warn['target']]['warns'] += 1
+                    target_key = warn['user_id'] or warn['target_username'] or warn['target'] or f"unknown_{warn['id']}"
+                    violators[target_key]['warns'] += 1
                 for ban in self.bans:
-                    violators[ban['target']]['bans'] += 1
+                    target_key = ban['user_id'] or ban['target_username'] or ban['target'] or f"unknown_{ban['id']}"
+                    violators[target_key]['bans'] += 1
 
-                # Исключаем модераторов
-                moderators_lower = [m.lower() for m in moderators_list]
-                top_violators = [
-                    (user, stats) for user, stats in violators.items()
-                    if user.lower() not in moderators_lower and 
-                    not any(m.lower() in user.lower() for m in moderators_lower)
-                ]
+                moderators_exact = set()
+                for mod in moderators_list:
+                    clean_mod = mod.strip().lower()
+                    if clean_mod:
+                        moderators_exact.add(clean_mod)
 
-                # Сортируем и выводим топ-5
+                top_violators = []
+                for user, stats in violators.items():
+                    clean_user = user.strip().lower()
+                    if clean_user not in moderators_exact:
+                        top_violators.append((user, stats))
+
                 sorted_violators = sorted(
                     top_violators,
                     key=lambda x: (x[1]['mutes'] + x[1]['warns'] + x[1]['bans']),
@@ -355,7 +399,7 @@ class ModerationAnalyzer:
 
                 for i, (user, stats) in enumerate(sorted_violators[:5], 1):
                     total = stats['mutes'] + stats['warns'] + stats['bans']
-                    display_name = f"@{user}" if not user.startswith('@') and not any(c in user for c in [' ', '|']) else user
+                    display_name = f"@{user}" if user.isdigit() or ' ' not in user else user
                     f.write(f"{i}. {display_name}:\n")
                     f.write(f"   Всего нарушений: {total}\n")
                     f.write(f"   • Муты: {stats['mutes']}\n")
@@ -373,9 +417,9 @@ class ModerationAnalyzer:
                 for mute in self.mutes:
                     mod_activity[mute['moderator']]['mutes'] += 1
                 for warn in self.warns:
-                    mod_activity[warn['moderator']]['warns'] += 1
+                    mod_activity[mute['moderator']]['warns'] += 1
                 for ban in self.bans:
-                    mod_activity[ban['moderator']]['bans'] += 1
+                    mod_activity[mute['moderator']]['bans'] += 1
 
                 sorted_mods = sorted(
                     mod_activity.items(),
@@ -427,7 +471,7 @@ async def main():
                 try:
                     await analyzer.analyze_message(message)
                 except Exception as e:
-                    print(f"Ошибка в сообщении {message.id}: {str(e)[:100]}...")
+                    print(f"Ошибка в сообщении {message.id}: {str(e)[:100]}..., текст: {message.text}")
                     continue
         
         analyzer.save_history()
