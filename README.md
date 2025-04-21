@@ -19,6 +19,25 @@
 
 1. Клонируйте репозиторий:
 ```bash
-git clone https://github.com/ваш-username/tg-moderation-analyzer.git
+git clone https://github.com/0xpixty/tg-moderation-analyzer.git
 cd tg-moderation-analyzer
+```
+
+2. Установите зависимости:
+```bash
+pip install -r requirements.txt
+```
+
+3. Настройте конфигурацию в config.py:
+```bash
+{
+    "api_id": 12345,          # Ваш API ID
+    "api_hash": "abcdef...",  # Ваш API Hash
+    "phone_number": "+123...",# Номер телефона
+    "mod_chat_id": -100...,   # ID чата модераторов
+    "main_chat_id": -100...,  # ID основного чата
+    "bot_id": 123456789,      # ID бота модератора
+    "history_file": "data/history.json",
+    "report_file": "reports/latest_report.txt"
+}
 ```
