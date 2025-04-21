@@ -101,12 +101,17 @@ class ModerationAnalyzer:
     async def analyze_message(self, message: Message):
         if not message.text or message.id <= self.last_message_id:
             return False
+        
+        for action_list in [self.mutes, self.warns, self.bans]:
+            if any(action.get('id') == message.id for action in action_list):
+                return False
             
         text = message.text
         action = None
         action_type = None
         
         try:
+            # Проверка на мут
             if "лишается права слова" in text.lower():
                 match = patterns["mute"].search(text)
                 if match and match.group("target").strip() not in ["", "⁬"]:
@@ -125,6 +130,7 @@ class ModerationAnalyzer:
                     self.mutes.append(action)
                     action_type = "mute"
 
+            # Проверка на варн
             elif "получает предупреждение" in text.lower():
                 match = patterns["warn"].search(text)
                 if match and match.group("target").strip() not in ["", "⁬"]:
@@ -143,6 +149,7 @@ class ModerationAnalyzer:
                     self.warns.append(action)
                     action_type = "warn"
 
+            # Проверка на бан
             elif "получает бан" in text.lower():
                 match = patterns["ban"].search(text)
                 if match and match.group("target").strip() not in ["", "⁬"]:
@@ -243,36 +250,42 @@ class ModerationAnalyzer:
         
         return week_count, month_count, total_count
 
-    def generate_report(self):
+    async def generate_report(self):
         current_date = datetime.now(timezone.utc)
-
+        
         moderators_list = []
         try:
-            with client:
-                mod_chat = client.loop.run_until_complete(client.get_entity(config["mod_chat_id"]))
-                participants = client.loop.run_until_complete(client.get_participants(mod_chat))
-                for member in participants:
-                    if not member.bot:
-                        if member.username:
-                            moderators_list.append(f"@{member.username}")
-                        moderators_list.append(member.first_name)
+            mod_chat = await client.get_entity(config["mod_chat_id"])
+            async for member in client.iter_participants(mod_chat):
+                if not member.bot:
+                    name_variants = []
+                    if member.first_name:
+                        name_variants.append(member.first_name)
+                    if member.last_name:
+                        name_variants.append(f"{member.first_name} {member.last_name}")
+                    if member.username:
+                        name_variants.append(f"@{member.username}")
+                    
+                    for name in set(name_variants):
+                        if name.strip():
+                            moderators_list.append(name.lower())
         except Exception as e:
             print(f"Ошибка при получении списка модераторов: {e}")
-    
+
         mute_week, mute_month, mute_total = self.get_period_stats(self.mutes, current_date)
         warn_week, warn_month, warn_total = self.get_period_stats(self.warns, current_date)
         ban_week, ban_month, ban_total = self.get_period_stats(self.bans, current_date)
-    
+        
         self.mutes.sort(key=lambda x: x["timestamp"])
         self.warns.sort(key=lambda x: x["timestamp"])
         self.bans.sort(key=lambda x: x["timestamp"])
         
-        # Генерируем отчет
         try:
             with open(config["report_file"], "w", encoding="utf-8") as f:
                 f.write(f"Отчет о модерации ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')})\n\n")
                 f.write(f"Всего действий: {len(self.mutes)} мутов, {len(self.warns)} варнов, {len(self.bans)} банов\n\n")
                 
+                # Муты
                 f.write("------ Муты ------\n")
                 for mute in self.mutes[-10:]:
                     ts = mute["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
@@ -286,6 +299,7 @@ class ModerationAnalyzer:
                 for mod, count in mute_total.most_common():
                     f.write(f"- {mod}: {count}\n")
                 
+                # Варны
                 f.write("\n------ Варны ------\n")
                 for warn in self.warns[-10:]:
                     ts = warn["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
@@ -299,6 +313,7 @@ class ModerationAnalyzer:
                 for mod, count in warn_total.most_common():
                     f.write(f"- {mod}: {count}\n")
                 
+                # Баны
                 f.write("\n------ Баны ------\n")
                 for ban in self.bans[-10:]:
                     ts = ban["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
@@ -312,86 +327,70 @@ class ModerationAnalyzer:
                 for mod, count in ban_total.most_common():
                     f.write(f"- {mod}: {count}\n")
                 
-                # Статистика по пользователям (топ-5)
+                # Топ-5 нарушителей (обычные пользователи)
                 f.write("\n------ Топ-5 нарушителей ------\n")
-    
-                user_violations = defaultdict(lambda: {
-                    'mutes': 0,
-                    'warns': 0,
-                    'bans': 0,
-                    'moderators': set()
-                })
 
+                violators = defaultdict(lambda: {'mutes': 0, 'warns': 0, 'bans': 0})
                 for mute in self.mutes:
-                    target = mute['target_username'] or mute['target']
-                    user_violations[target]['mutes'] += 1
-                    user_violations[target]['moderators'].add(mute['moderator'])
-                
+                    violators[mute['target']]['mutes'] += 1
                 for warn in self.warns:
-                    target = warn['target_username'] or warn['target']
-                    user_violations[target]['warns'] += 1
-                    user_violations[target]['moderators'].add(warn['moderator'])
-                
+                    violators[warn['target']]['warns'] += 1
                 for ban in self.bans:
-                    target = ban['target_username'] or ban['target']
-                    user_violations[target]['bans'] += 1
-                    user_violations[target]['moderators'].add(ban['moderator'])
+                    violators[ban['target']]['bans'] += 1
 
-                top_users = []
-                for user, stats in user_violations.items():
+                # Исключаем модераторов
+                moderators_lower = [m.lower() for m in moderators_list]
+                top_violators = [
+                    (user, stats) for user, stats in violators.items()
+                    if user.lower() not in moderators_lower and 
+                    not any(m.lower() in user.lower() for m in moderators_lower)
+                ]
+
+                # Сортируем и выводим топ-5
+                sorted_violators = sorted(
+                    top_violators,
+                    key=lambda x: (x[1]['mutes'] + x[1]['warns'] + x[1]['bans']),
+                    reverse=True
+                )
+
+                for i, (user, stats) in enumerate(sorted_violators[:5], 1):
                     total = stats['mutes'] + stats['warns'] + stats['bans']
-                    top_users.append({
-                        'user': user,
-                        'total': total,
-                        'mutes': stats['mutes'],
-                        'warns': stats['warns'],
-                        'bans': stats['bans'],
-                        'moderators': ', '.join(stats['moderators']) if stats['moderators'] else 'неизвестно'
-                    })
-
-                top_users.sort(key=lambda x: x['total'], reverse=True)
-
-                for i, user in enumerate(top_users[:5], 1):
-                    display_name = f"@{user['user']}" if not user['user'].startswith(('tg://', 'http')) else user['user']
+                    display_name = f"@{user}" if not user.startswith('@') and not any(c in user for c in [' ', '|']) else user
                     f.write(f"{i}. {display_name}:\n")
-                    f.write(f"   Всего нарушений: {user['total']}\n")
-                    f.write(f"   • Муты: {user['mutes']}\n")
-                    f.write(f"   • Варны: {user['warns']}\n")
-                    f.write(f"   • Баны: {user['bans']}\n")
-                    f.write(f"   Модераторы: {user['moderators']}\n\n")
+                    f.write(f"   Всего нарушений: {total}\n")
+                    f.write(f"   • Муты: {stats['mutes']}\n")
+                    f.write(f"   • Варны: {stats['warns']}\n")
+                    f.write(f"   • Баны: {stats['bans']}\n\n")
 
-                # Статистика по модераторам (топ-5 активных)
-                f.write("\n------ Топ-5 модераторов ------\n")
+                if not sorted_violators:
+                    f.write("Нет данных о нарушениях\n\n")
                 
-                mod_stats = defaultdict(lambda: {'mutes': 0, 'warns': 0, 'bans': 0})
+                # Топ-5 активных модераторов
+                f.write("\n------ Топ-5 активных модераторов ------\n")
+                
+                mod_activity = defaultdict(lambda: {'mutes': 0, 'warns': 0, 'bans': 0})
                 
                 for mute in self.mutes:
-                    mod_stats[mute['moderator']]['mutes'] += 1
+                    mod_activity[mute['moderator']]['mutes'] += 1
                 for warn in self.warns:
-                    mod_stats[warn['moderator']]['warns'] += 1
+                    mod_activity[warn['moderator']]['warns'] += 1
                 for ban in self.bans:
-                    mod_stats[ban['moderator']]['bans'] += 1
+                    mod_activity[ban['moderator']]['bans'] += 1
 
-                moderators = []
-                for mod, stats in mod_stats.items():
+                sorted_mods = sorted(
+                    mod_activity.items(),
+                    key=lambda x: (x[1]['mutes'] + x[1]['warns'] + x[1]['bans']),
+                    reverse=True
+                )
+
+                for i, (mod, stats) in enumerate(sorted_mods[:5], 1):
                     total = stats['mutes'] + stats['warns'] + stats['bans']
-                    moderators.append({
-                        'name': mod,
-                        'total': total,
-                        'mutes': stats['mutes'],
-                        'warns': stats['warns'],
-                        'bans': stats['bans']
-                    })
-
-                moderators.sort(key=lambda x: x['total'], reverse=True)
+                    f.write(f"{i}. {mod}:\n")
+                    f.write(f"   Всего действий: {total}\n")
+                    f.write(f"   • Мутов: {stats['mutes']}\n")
+                    f.write(f"   • Варнов: {stats['warns']}\n")
+                    f.write(f"   • Банов: {stats['bans']}\n\n")
                 
-                for i, mod in enumerate(moderators[:5], 1):
-                    f.write(f"{i}. {mod['name']}:\n")
-                    f.write(f"   Всего действий: {mod['total']}\n")
-                    f.write(f"   • Выдано мутов: {mod['mutes']}\n")
-                    f.write(f"   • Выдано варнов: {mod['warns']}\n")
-                    f.write(f"   • Выдано банов: {mod['bans']}\n\n")
-            
             print(f"Отчет сохранен в {config['report_file']}")
         except Exception as e:
             print(f"Ошибка генерации отчета: {e}")
@@ -432,7 +431,7 @@ async def main():
                     continue
         
         analyzer.save_history()
-        analyzer.generate_report()
+        await analyzer.generate_report()
         
     except Exception as e:
         print(f"Критическая ошибка: {e}")
