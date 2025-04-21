@@ -1,12 +1,18 @@
 import subprocess
 import sys
 import pkg_resources
+import os
+from time import sleep
+from rich.console import Console
+from rich.panel import Panel
+from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
 
-# Автоустановка библиотек
-REQUIRED_PACKAGES = ['telethon==1.39.0', 'tqdm==4.67.1']
+# Автоустановка необходимых библиотек
+REQUIRED_PACKAGES = ['telethon==1.39.0', 'tqdm==4.67.1', 'rich==13.9.2']
 
 def install_packages():
-    print("Проверка необходимых библиотек...")
+    console = Console()
+    console.print(Panel("Проверка необходимых библиотек...", title="Telegram Moderation Analyzer", border_style="blue"))
     missing = []
     for package in REQUIRED_PACKAGES:
         try:
@@ -15,15 +21,16 @@ def install_packages():
             missing.append(package)
     
     if missing:
-        print(f"Установка библиотек: {', '.join(missing)}")
+        console.print(f"Установка библиотек: {', '.join(missing)}", style="yellow")
         try:
             subprocess.check_call([sys.executable, '-m', 'pip', 'install'] + missing)
-            print("Библиотеки успешно установлены")
+            console.print("Библиотеки успешно установлены", style="green")
         except subprocess.CalledProcessError as e:
-            print(f"Ошибка установки библиотек: {e}")
+            console.print(f"Ошибка установки библиотек: {e}", style="red")
             sys.exit(1)
     else:
-        print("Все библиотеки уже установлены")
+        console.print("Все библиотеки уже установлены", style="green")
+    sleep(1)
 
 # Устанавливаем библиотеки при первом запуске
 install_packages()
@@ -35,14 +42,15 @@ from collections import defaultdict, Counter
 from tqdm import tqdm
 from telethon import TelegramClient
 from telethon.tl.types import Message
+from rich.prompt import Prompt
 
 # Конфигурация
 config = {
     "api_id": ,
     "api_hash": "",
-    "phone_number": "+",
-    "mod_chat_id": -,
-    "main_chat_id": -,
+    "phone_number": "",
+    "mod_chat_id": ,
+    "main_chat_id": ,
     "bot_id": 707693258,
     "history_file": "history.json",
     "report_file": "report.txt"
@@ -79,10 +87,15 @@ patterns = {
     )
 }
 
+def clear_screen():
+    sleep(1)
+    os.system('cls' if os.name == 'nt' else 'clear')
+
 class ModerationAnalyzer:
     def __init__(self):
         self.reset_data()
         self.full_rescan = False
+        self.console = Console()
 
     def reset_data(self):
         self.mutes = []
@@ -108,10 +121,10 @@ class ModerationAnalyzer:
                 self.last_message_id = data.get("last_message_id", 0)
                 self.last_analysis = datetime.fromisoformat(data.get("last_analysis", "1970-01-01T00:00:00"))
                 
-                print(f"Загружено: {len(self.mutes)} мутов, {len(self.warns)} варнов, {len(self.bans)} банов")
+                self.console.print(f"Загружено: {len(self.mutes)} мутов, {len(self.warns)} варнов, {len(self.bans)} банов", style="green")
                 
         except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
-            print(f"История не загружена (новый анализ): {e}")
+            self.console.print(f"История не загружена (новый анализ): {e}", style="yellow")
             self.reset_data()
             self.full_rescan = True
 
@@ -127,9 +140,9 @@ class ModerationAnalyzer:
         try:
             with open(config["history_file"], "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
-            print("История сохранена")
+            self.console.print("История сохранена", style="green")
         except Exception as e:
-            print(f"Ошибка сохранения истории: {e}")
+            self.console.print(f"Ошибка сохранения истории: {e}", style="red")
 
     async def analyze_message(self, message: Message):
         if not message.text or message.id <= self.last_message_id:
@@ -157,7 +170,7 @@ class ModerationAnalyzer:
                     other = match.group("other") if match.group("other") else None
                     
                     if not any([target, target_username, user_id, telegram_username]) and other in ["", None]:
-                        print(f"Пропущено (пустой target): ID {message.id}, текст: {text}")
+                        self.console.print(f"Пропущено (пустой target): ID {message.id}, текст: {text[:50]}...", style="yellow")
                         return False
                     
                     action = {
@@ -186,7 +199,7 @@ class ModerationAnalyzer:
                     other = match.group("other") if match.group("other") else None
                     
                     if not any([target, target_username, user_id, telegram_username]) and other in ["", None]:
-                        print(f"Пропущено (пустой target): ID {message.id}, текст: {text}")
+                        self.console.print(f"Пропущено (пустой target): ID {message.id}, текст: {text[:50]}...", style="yellow")
                         return False
                     
                     action = {
@@ -215,7 +228,7 @@ class ModerationAnalyzer:
                     other = match.group("other") if match.group("other") else None
                     
                     if not any([target, target_username, user_id, telegram_username]) and other in ["", None]:
-                        print(f"Пропущено (пустой target): ID {message.id}, текст: {text}")
+                        self.console.print(f"Пропущено (пустой target): ID {message.id}, текст: {text[:50]}...", style="yellow")
                         return False
                     
                     action = {
@@ -232,19 +245,17 @@ class ModerationAnalyzer:
                     action_type = "ban"
             
             if action:
-                # Формируем ключ: user_id > target_username > target
                 target_key = action["user_id"] or action["target_username"] or action["target"] or f"unknown_{action['id']}"
                 if not target_key or target_key.strip() in ["", "⁬"]:
-                    print(f"Пропущено (некорректный target_key): ID {message.id}, текст: {text}")
+                    self.console.print(f"Пропущено (некорректный target_key): ID {message.id}, текст: {text[:50]}...", style="yellow")
                     return False
                 
                 self.target_stats[target_key][action_type + "s"] += 1
                 self.target_stats[target_key]["moderators"].add(action["moderator"])
-                print(f"Найдено действие: {action_type} от {action['moderator']} для {target_key}")
                 return True
                 
         except Exception as e:
-            print(f"Ошибка анализа сообщения {message.id}: {str(e)[:100]}..., текст: {text}")
+            self.console.print(f"Ошибка анализа сообщения {message.id}: {str(e)[:50]}..., текст: {text[:50]}...", style="red")
             
         return False
 
@@ -254,20 +265,38 @@ class ModerationAnalyzer:
             bot_entity = await client.get_entity(config["bot_id"])
             
             total = await client.get_messages(chat, limit=0, from_user=bot_entity)
-            print(f"Всего сообщений от бота: {total.total}")
+            self.console.print(f"Всего сообщений от бота: {total.total}", style="blue")
             
-            async for message in client.iter_messages(
-                chat,
-                from_user=bot_entity,
-                reverse=True,
-                limit=None
-            ):
-                try:
-                    await self.analyze_message(message)
-                except Exception as e:
-                    print(f"Ошибка в сообщении {message.id}: {str(e)[:100]}..., текст: {message.text}")
-                    continue
-                    
+            with Progress(
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                "[progress.percentage]{task.percentage:>3.0f}%",
+                TimeRemainingColumn(),
+                console=self.console
+            ) as progress:
+                task = progress.add_task("[cyan]Анализ сообщений...", total=total.total)
+                messages_processed = 0
+                
+                async for message in client.iter_messages(
+                    chat,
+                    from_user=bot_entity,
+                    reverse=True,
+                    limit=None
+                ):
+                    try:
+                        if await self.analyze_message(message):
+                            self.console.print(
+                                f"Найдено действие: {action_type} от {action['moderator']} для {target_key}",
+                                style="green"
+                            )
+                        messages_processed += 1
+                        progress.update(task, advance=1)
+                    except Exception as e:
+                        self.console.print(f"Ошибка в сообщении {message.id}: {str(e)[:50]}...", style="red")
+                        continue
+                
+                progress.update(task, completed=total.total)
+            
             if self.mutes or self.warns or self.bans:
                 self.last_message_id = max(
                     *(m.get('id', 0) for m in self.mutes),
@@ -275,7 +304,7 @@ class ModerationAnalyzer:
                     *(b.get('id', 0) for b in self.bans))
             
         except Exception as e:
-            print(f"Ошибка анализа: {e}")
+            self.console.print(f"Ошибка анализа: {e}", style="red")
             raise
 
     async def get_moderators(self):
@@ -289,10 +318,10 @@ class ModerationAnalyzer:
                         "name": member.first_name,
                         "username": member.username
                     })
-            print(f"Найдено {len(moderators)} модераторов")
+            self.console.print(f"Найдено {len(moderators)} модераторов", style="blue")
             return moderators
         except Exception as e:
-            print(f"Ошибка при получении списка модераторов: {e}")
+            self.console.print(f"Ошибка при получении списка модераторов: {e}", style="red")
             return []
 
     def get_period_stats(self, actions, current_date):
@@ -338,7 +367,7 @@ class ModerationAnalyzer:
                         if name.strip():
                             moderators_list.append(name.lower())
         except Exception as e:
-            print(f"Ошибка при получении списка модераторов: {e}")
+            self.console.print(f"Ошибка при получении списка модераторов: {e}", style="red")
 
         mute_week, mute_month, mute_total = self.get_period_stats(self.mutes, current_date)
         warn_week, warn_month, warn_total = self.get_period_stats(self.warns, current_date)
@@ -353,7 +382,6 @@ class ModerationAnalyzer:
                 f.write(f"Отчет о модерации ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')})\n\n")
                 f.write(f"Всего действий: {len(self.mutes)} мутов, {len(self.warns)} варнов, {len(self.bans)} банов\n\n")
                 
-                # Муты
                 f.write("------ Муты ------\n")
                 for mute in self.mutes[-10:]:
                     ts = mute["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
@@ -367,7 +395,6 @@ class ModerationAnalyzer:
                 for mod, count in mute_total.most_common():
                     f.write(f"- {mod}: {count}\n")
                 
-                # Варны
                 f.write("\n------ Варны ------\n")
                 for warn in self.warns[-10:]:
                     ts = warn["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
@@ -381,7 +408,6 @@ class ModerationAnalyzer:
                 for mod, count in warn_total.most_common():
                     f.write(f"- {mod}: {count}\n")
                 
-                # Баны
                 f.write("\n------ Баны ------\n")
                 for ban in self.bans[-10:]:
                     ts = ban["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
@@ -395,9 +421,7 @@ class ModerationAnalyzer:
                 for mod, count in ban_total.most_common():
                     f.write(f"- {mod}: {count}\n")
                 
-                # Топ-5 нарушителей среди пользователей
                 f.write("\n------ Топ-5 нарушителей ------\n")
-
                 violators = defaultdict(lambda: {'mutes': 0, 'warns': 0, 'bans': 0})
                 for mute in self.mutes:
                     target_key = mute['user_id'] or mute['target_username'] or mute['target'] or f"unknown_{mute['id']}"
@@ -439,11 +463,8 @@ class ModerationAnalyzer:
                 if not sorted_violators:
                     f.write("Нет данных о нарушениях\n\n")
                 
-                # Топ-5 активных модераторов
                 f.write("\n------ Топ-5 активных модераторов ------\n")
-                
                 mod_activity = defaultdict(lambda: {'mutes': 0, 'warns': 0, 'bans': 0})
-                
                 for mute in self.mutes:
                     mod_activity[mute['moderator']]['mutes'] += 1
                 for warn in self.warns:
@@ -465,50 +486,91 @@ class ModerationAnalyzer:
                     f.write(f"   • Варнов: {stats['warns']}\n")
                     f.write(f"   • Банов: {stats['bans']}\n\n")
                 
-            print(f"Отчет сохранен в {config['report_file']}")
+            self.console.print(Panel(
+                f"Отчёт сохранён: {config['report_file']}\n"
+                f"Результаты:\n"
+                f"• Мутов: {len(self.mutes)}\n"
+                f"• Варнов: {len(self.warns)}\n"
+                f"• Банов: {len(self.bans)}",
+                title="Анализ завершён",
+                border_style="green"
+            ))
         except Exception as e:
-            print(f"Ошибка генерации отчета: {e}")
+            self.console.print(f"Ошибка генерации отчета: {e}", style="red")
 
 async def main():
     analyzer = ModerationAnalyzer()
+    console = analyzer.console
+    
+    clear_screen()
+    console.print(Panel(
+        "Запуск Telegram Moderation Analyzer\n"
+        "Анализирует муты, варны и баны в Telegram-чате с помощью бота Iris\n"
+        "Настройте config в moder_analyzer.py перед запуском",
+        title="Добро пожаловать",
+        border_style="blue"
+    ))
+    
     analyzer.load_history()
+    clear_screen()
     
     await client.start(config["phone_number"])
     if not await client.is_user_authorized():
-        await client.send_code_request(config["phone_number"])
-        code = input('Введите код из Telegram: ')
+        console.print("Отправлен код авторизации в Telegram", style="yellow")
+        code = Prompt.ask("Введите код из Telegram")
         await client.sign_in(config["phone_number"], code)
+    
+    user = await client.get_me()
+    username = f"@{user.username}" if user.username else f"{user.first_name}"
+    console.print(Panel(
+        f"Авторизован: {username}\n"
+        f"Чат: {config['main_chat_id']}\n"
+        f"Бот: {config['bot_id']}",
+        title="Авторизация успешна",
+        border_style="green"
+    ))
+    sleep(2)
+    clear_screen()
     
     try:
         if analyzer.full_rescan:
-            print("Запуск полного анализа...")
+            console.print("Запуск полного анализа...", style="blue")
             await analyzer.analyze_all_messages()
         else:
-            print("Анализ новых сообщений...")
+            console.print("Анализ новых сообщений...", style="blue")
             chat = await client.get_entity(config["main_chat_id"])
             bot_entity = await client.get_entity(config["bot_id"])
             
             total = await client.get_messages(chat, limit=0, from_user=bot_entity)
-            print(f"Всего сообщений от бота: {total.total}")
+            console.print(f"Всего сообщений от бота: {total.total}", style="blue")
             
-            async for message in client.iter_messages(
-                chat,
-                from_user=bot_entity,
-                min_id=analyzer.last_message_id + 1,
-                reverse=True,
-                limit=None
-            ):
-                try:
-                    await analyzer.analyze_message(message)
-                except Exception as e:
-                    print(f"Ошибка в сообщении {message.id}: {str(e)[:100]}..., текст: {message.text}")
-                    continue
+            with Progress(
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                "[progress.percentage]{task.percentage:>3.0f}%",
+                TimeRemainingColumn(),
+                console=console
+            ) as progress:
+                task = progress.add_task("[cyan]Анализ новых сообщений...", total=total.total)
+                async for message in client.iter_messages(
+                    chat,
+                    from_user=bot_entity,
+                    min_id=analyzer.last_message_id + 1,
+                    reverse=True,
+                    limit=None
+                ):
+                    try:
+                        await analyzer.analyze_message(message)
+                        progress.update(task, advance=1)
+                    except Exception as e:
+                        console.print(f"Ошибка в сообщении {message.id}: {str(e)[:50]}...", style="red")
+                        continue
         
         analyzer.save_history()
         await analyzer.generate_report()
         
     except Exception as e:
-        print(f"Критическая ошибка: {e}")
+        console.print(f"Критическая ошибка: {e}", style="red")
     finally:
         await client.disconnect()
 
