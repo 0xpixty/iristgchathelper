@@ -1,3 +1,33 @@
+import subprocess
+import sys
+import pkg_resources
+
+# Автоустановка библиотек
+REQUIRED_PACKAGES = ['telethon==1.39.0', 'tqdm==4.67.1']
+
+def install_packages():
+    print("Проверка необходимых библиотек...")
+    missing = []
+    for package in REQUIRED_PACKAGES:
+        try:
+            pkg_resources.get_distribution(package.split('==')[0])
+        except pkg_resources.DistributionNotFound:
+            missing.append(package)
+    
+    if missing:
+        print(f"Установка библиотек: {', '.join(missing)}")
+        try:
+            subprocess.check_call([sys.executable, '-m', 'pip', 'install'] + missing)
+            print("Библиотеки успешно установлены")
+        except subprocess.CalledProcessError as e:
+            print(f"Ошибка установки библиотек: {e}")
+            sys.exit(1)
+    else:
+        print("Все библиотеки уже установлены")
+
+# Устанавливаем библиотеки при первом запуске
+install_packages()
+
 import re
 import json
 from datetime import datetime, timedelta, timezone
